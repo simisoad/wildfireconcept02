@@ -1,0 +1,35 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="WildFireConcept02"
+run/main_scene="uid://btgik6e5pkrai"
+config/features=PackedStringArray("4.5", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+ChunkGenerator="*res://Autoload/ChunkGenerator.gd"
+DataSourceManager="*res://Autoload/DataSourceManager.gd"
+DebugManager="*res://Autoload/DebugManager.gd"
+WorldStreamer="*res://Autoload/WorldStreamer.gd"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/_Godot-IDE_/plugin.cfg", "res://addons/godot-sqlite/plugin.cfg")
+
+[file_customization]
+
+folder_colors={
+"res://addons/_Godot-IDE_/plugins": "blue",
+"res://addons/_Godot-IDE_/plugins/": "blue",
+"res://addons/_Godot-IDE_/shared_resources/": "teal"
+}

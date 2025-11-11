@@ -1,0 +1,10 @@
+[gd_scene load_steps=3 format=3 uid="uid://w26d8hf2wmje"]
+
+[ext_resource type="Script" uid="uid://dmue6ayxp0x8q" path="res://temp/convert_mvt_to_mesh_3D.gd" id="1_xlwy2"]
+[ext_resource type="PackedScene" uid="uid://dkfm6qxavqtnq" path="res://Main/camera_3D_Ortho.tscn" id="2_6lyew"]
+
+[node name="Node3D" type="Node3D"]
+script = ExtResource("1_xlwy2")
+
+[node name="Camera2D" parent="." instance=ExtResource("2_6lyew")]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 4.44707, 0)

@@ -1,0 +1,10 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3 uid="uid://eug6a30rfvd2"]
+
+[ext_resource type="Shader" uid="uid://ddnlsdroyuayc" path="res://Tiles/Shader/Tiles.gdshader" id="1_ruglu"]
+[ext_resource type="Texture2D" uid="uid://y15w1km3v4e0" path="res://Tiles/Textures/Asphalt01.png" id="2_euok6"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_ruglu")
+shader_parameter/texture_atlas = ExtResource("2_euok6")
+shader_parameter/atlas_size = Vector2(4, 4)

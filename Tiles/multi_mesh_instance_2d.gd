@@ -1,0 +1,1 @@
+extends MultiMeshInstance2D

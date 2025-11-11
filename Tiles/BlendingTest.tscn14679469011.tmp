@@ -1,0 +1,52 @@
+[gd_scene load_steps=9 format=3 uid="uid://blxloh6yb1iue"]
+
+[ext_resource type="Script" uid="uid://b7jbguaryxb6e" path="res://Tiles/blending_test.gd" id="1_qvdaw"]
+[ext_resource type="Texture2D" uid="uid://cvysy0nf57b0i" path="res://RefImages/Tile_00.png" id="2_ykw1q"]
+[ext_resource type="Script" uid="uid://cnid4ndmghybj" path="res://Tiles/camera_2d.gd" id="3_k8e5o"]
+[ext_resource type="Texture2D" uid="uid://dbu43mv3nky67" path="res://RefImages/Chunk00_2/x7y7.png" id="3_ykw1q"]
+[ext_resource type="Script" uid="uid://bfmlpas5jy4hu" path="res://Tiles/control.gd" id="4_3yjvx"]
+[ext_resource type="Texture2D" uid="uid://c6b6h4nijkl7v" path="res://icon.svg" id="5_y4r5k"]
+[ext_resource type="TileSet" uid="uid://wcyycxltp1bb" path="res://Tiles/BlendingTest.tres" id="6_qxd5o"]
+[ext_resource type="TileSet" uid="uid://c6f7ctom55xur" path="res://Tiles/ForestTiles.tres" id="7_nxwy5"]
+
+[node name="Node2D" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_qvdaw")
+metadata/_edit_horizontal_guides_ = [-51.0]
+
+[node name="Background" type="Sprite2D" parent="."]
+position = Vector2(65536, 65536)
+scale = Vector2(128, 128)
+texture = ExtResource("2_ykw1q")
+
+[node name="RefImage" type="Sprite2D" parent="."]
+unique_name_in_owner = true
+position = Vector2(30472, -12610)
+texture = ExtResource("3_ykw1q")
+
+[node name="Marker2D" type="Marker2D" parent="."]
+unique_name_in_owner = true
+position = Vector2(341, 88)
+
+[node name="Camera2D" type="Camera2D" parent="."]
+unique_name_in_owner = true
+script = ExtResource("3_k8e5o")
+
+[node name="Control" type="CanvasLayer" parent="."]
+script = ExtResource("4_3yjvx")
+
+[node name="Label" type="Label" parent="Control"]
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+z_index = 4096
+texture = ExtResource("5_y4r5k")
+
+[node name="TileMapLayer" type="TileMapLayer" parent="."]
+position = Vector2(-673, -901)
+tile_set = ExtResource("6_qxd5o")
+
+[node name="TileMapLayer2" type="TileMapLayer" parent="."]
+tile_set = ExtResource("7_nxwy5")

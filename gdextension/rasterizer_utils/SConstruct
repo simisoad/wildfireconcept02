@@ -1,0 +1,23 @@
+# SConstruct
+import os
+
+# --- Konfiguration ---
+library_name = 'rasterizer_utils' # Neuer Name für unsere Bibliothek
+env = SConscript("gdextension/godot-cpp/SConstruct")
+
+# --- Code-Pfade ---
+env.Append(CPPPATH=["src/"]) # Besser, nur den Root-Source-Ordner anzugeben
+
+# --- Quelldateien ---
+# Glob sucht rekursiv nach allen .cpp Dateien in src/
+sources = Glob('src/**.cpp') 
+
+# --- Ausgabe-Setup ---
+# Der Name wird automatisch basierend auf Plattform/Architektur etc. angepasst
+library_path = "bin/{}".format(library_name) 
+
+# --- Kompilierung ---
+# Erstelle die Shared Library. SCons und godot-cpp kümmern sich um den Rest.
+library = env.SharedLibrary(library_path, source=sources)
+
+Default(library)

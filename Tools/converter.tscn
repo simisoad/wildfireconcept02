@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b4yqk7kn86irc"]
+
+[ext_resource type="Script" uid="uid://bkpca7nwo27ac" path="res://Tools/converter.gd" id="1_7strt"]
+
+[node name="Converter" type="Node2D"]
+script = ExtResource("1_7strt")

@@ -1,0 +1,60 @@
+[gd_scene load_steps=10 format=3 uid="uid://blxloh6yb1iue"]
+
+[ext_resource type="Script" uid="uid://b7jbguaryxb6e" path="res://Tiles/blending_test.gd" id="1_qvdaw"]
+[ext_resource type="Texture2D" uid="uid://cvysy0nf57b0i" path="res://RefImages/Tile_00.png" id="2_ykw1q"]
+[ext_resource type="Texture2D" uid="uid://dbu43mv3nky67" path="res://RefImages/Chunk00_2/x7y7.png" id="3_ykw1q"]
+[ext_resource type="Script" uid="uid://bfmlpas5jy4hu" path="res://Tiles/control.gd" id="4_3yjvx"]
+[ext_resource type="PackedScene" uid="uid://dkfm6qxavqtnq" path="res://Main/camera_3D_Ortho.tscn" id="4_k8e5o"]
+[ext_resource type="Texture2D" uid="uid://c6b6h4nijkl7v" path="res://icon.svg" id="5_y4r5k"]
+[ext_resource type="TileSet" uid="uid://wcyycxltp1bb" path="res://Tiles/BlendingTest.tres" id="6_qxd5o"]
+[ext_resource type="TileSet" uid="uid://c6f7ctom55xur" path="res://Tiles/ForestTiles.tres" id="7_nxwy5"]
+[ext_resource type="Script" uid="uid://ds3hstneimnjt" path="res://Tiles/line_2d.gd" id="9_k8e5o"]
+
+[node name="Node2D" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_qvdaw")
+metadata/_edit_horizontal_guides_ = [-51.0]
+
+[node name="Background" type="Sprite2D" parent="."]
+position = Vector2(65536, 65536)
+scale = Vector2(128, 128)
+texture = ExtResource("2_ykw1q")
+
+[node name="RefImage" type="Sprite2D" parent="."]
+unique_name_in_owner = true
+position = Vector2(30472, -12610)
+texture = ExtResource("3_ykw1q")
+
+[node name="Marker2D" type="Marker2D" parent="."]
+unique_name_in_owner = true
+position = Vector2(341, 88)
+
+[node name="Camera2D" parent="." instance=ExtResource("4_k8e5o")]
+unique_name_in_owner = true
+
+[node name="Control" type="CanvasLayer" parent="."]
+script = ExtResource("4_3yjvx")
+
+[node name="Label" type="Label" parent="Control"]
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+z_index = 4096
+texture = ExtResource("5_y4r5k")
+
+[node name="TileMapLayer" type="TileMapLayer" parent="."]
+position = Vector2(-673, -901)
+tile_map_data = PackedByteArray(0, 0, 7, 0, 4, 0, 0, 0, 3, 0, 2, 0, 0, 0)
+tile_set = ExtResource("6_qxd5o")
+
+[node name="TileMapLayer2" type="TileMapLayer" parent="."]
+tile_set = ExtResource("7_nxwy5")
+
+[node name="Line2D" type="Line2D" parent="."]
+position = Vector2(-5.11621e+07, 5.50553e+08)
+scale = Vector2(100, 100)
+points = PackedVector2Array(511621, -5.50553e+06, 511622, -5.50553e+06, 511623, -5.50552e+06, 511622, -5.50552e+06, 511612, -5.50549e+06, 511607, -5.50548e+06, 511584, -5.50543e+06, 511570, -5.50539e+06, 511566, -5.50537e+06, 511563, -5.50535e+06, 511563, -5.50528e+06, 511556, -5.50524e+06, 511548, -5.50515e+06, 511541, -5.50509e+06, 511538, -5.50505e+06, 511525, -5.50495e+06, 511516, -5.5049e+06, 511504, -5.50483e+06, 511493, -5.50478e+06, 511492, -5.50476e+06, 511492, -5.50473e+06, 511490, -5.5047e+06, 511486, -5.50468e+06, 511457, -5.50459e+06, 511438, -5.50452e+06, 511408, -5.50439e+06, 511403, -5.50435e+06, 511407, -5.50423e+06, 511411, -5.50412e+06, 511455, -5.50394e+06, 511496, -5.50378e+06, 511490, -5.50376e+06, 511478, -5.50374e+06, 511464, -5.50371e+06, 511446, -5.50368e+06, 511440, -5.50365e+06, 511443, -5.50363e+06, 511467, -5.50356e+06, 511473, -5.50354e+06, 511474, -5.50354e+06, 511474, -5.50353e+06)
+width = 0.01
+script = ExtResource("9_k8e5o")

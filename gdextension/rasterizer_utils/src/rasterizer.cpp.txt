@@ -1,0 +1,300 @@
+#include "rasterizer.h"
+#include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/classes/marshalls.hpp> // WICHTIG: Neues Include für die Serialisierung!
+#include <map>
+#include <vector>
+#include <algorithm>
+
+
+using namespace godot;
+
+
+
+
+// --- Bind Methods: Macht die Funktionen in GDScript verfügbar ---
+void RasterizerUtils::_bind_methods() {
+
+    ClassDB::bind_static_method("RasterizerUtils", D_METHOD("rasterize_tile_data_fast", "mvt_tile", "config"), &RasterizerUtils::rasterize_tile_data_fast);
+
+}
+
+RasterizerUtils::RasterizerUtils() {}
+RasterizerUtils::~RasterizerUtils() {}
+
+struct Edge {
+    double y_max;      // Die y-Koordinate, an der die Kante endet
+    double x_current;  // Die aktuelle x-Koordinate des Schnittpunkts mit der Scanline
+    double inv_slope;  // Die inverse Steigung (dx/dy), um x effizient zu aktualisieren
+};
+
+// HILFSFUNKTION zum Sortieren der Edges nach ihrer x-Koordinate
+static bool compare_edges(const Edge &a, const Edge &b) {
+    return a.x_current < b.x_current;
+}
+
+Variant RasterizerUtils::rasterize_tile_data_fast(const Variant &mvt_tile_variant, const Dictionary &config) {
+    Object *mvt_tile_obj = mvt_tile_variant;
+    if (!mvt_tile_obj) {
+        UtilityFunctions::push_warning("RasterizerUtils: MVT-Tile-Objekt ist null.");
+        return PackedByteArray(); // Rückgabe eines leeren Byte-Arrays bei Fehler
+    }
+
+    const int64_t sub_chunk_resolution = config.get("sub_chunk_resolution", 128);
+    const int64_t sub_chunks_per_axis = config.get("sub_chunks_per_axis", 4);
+    const Dictionary type_map = config.get("type_map", Dictionary());
+    const Array render_order = config.get("render_order", Array());
+
+    // ... (Vorbereiten der prepared_sub_chunks_bytes und Gruppieren der Features bleibt exakt gleich)
+    std::map<Vector2i, Dictionary> prepared_sub_chunks_map;
+    for (int64_t y = 0; y < sub_chunks_per_axis; ++y) {
+        for (int64_t x = 0; x < sub_chunks_per_axis; ++x) {
+            Vector2i coord(x, y);
+            PackedByteArray logic_map_bytes;
+            logic_map_bytes.resize(sub_chunk_resolution * sub_chunk_resolution);
+            logic_map_bytes.fill(0);
+            
+            Dictionary chunk_data;
+            chunk_data["logic_map_bytes"] = logic_map_bytes;
+            prepared_sub_chunks_map[coord] = chunk_data;
+        }
+    }
+    Dictionary all_features_by_type;
+    Array layers = mvt_tile_obj->call("layers");
+    if (layers.is_empty()) return PackedByteArray();
+    for (int i = 0; i < layers.size(); ++i) {
+        Object *layer = layers[i];
+        Array features = layer->call("features");
+        for (int j = 0; j < features.size(); ++j) {
+            Object *feature = features[j];
+            Dictionary tags = feature->call("tags", layer);
+            String type_tag = tags.get("type", "");
+            if (type_map.has(type_tag)) {
+                if (!all_features_by_type.has(type_tag)) { all_features_by_type[type_tag] = Array(); }
+                Array feature_list = all_features_by_type[type_tag];
+                feature_list.append(feature);
+                all_features_by_type[type_tag] = feature_list;
+            }
+        }
+    }
+    Object* first_layer = layers[0];
+    const double tile_extent = first_layer->call("extent");
+    const double total_pixel_dim = sub_chunk_resolution * sub_chunks_per_axis;
+    const double scale_vec_to_pixel = total_pixel_dim / tile_extent;
+
+    for (int i = 0; i < render_order.size(); ++i) {
+        String type_name = render_order[i];
+        if (!all_features_by_type.has(type_name)) continue;
+        const int64_t type_id = type_map.get(type_name, 0);
+        Array features_of_type = all_features_by_type[type_name];
+
+        for (int j = 0; j < features_of_type.size(); ++j) {
+            Object *feature = features_of_type[j];
+            Array geometry_commands = feature->call("geometry");
+            Array all_rings_pixel_space;
+            PackedVector2Array current_ring;
+            Vector2 cursor(0, 0);
+            for (int k = 0; k < geometry_commands.size(); ++k) {
+                Array cmd_seq = geometry_commands[k];
+                int64_t cmd_id = cmd_seq[0];
+                if (cmd_id == 1) {
+                    cursor += Vector2(cmd_seq[1], cmd_seq[2]);
+                    current_ring.push_back(cursor * scale_vec_to_pixel);
+                } else if (cmd_id == 2) {
+                    for (int l = 1; l < cmd_seq.size(); l += 2) {
+                        cursor += Vector2(cmd_seq[l], cmd_seq[l + 1]);
+                        current_ring.push_back(cursor * scale_vec_to_pixel);
+                    }
+                } else if (cmd_id == 7) {
+                    if (!current_ring.is_empty()) {
+                        all_rings_pixel_space.push_back(current_ring);
+                        current_ring = PackedVector2Array();
+                    }
+                }
+            }
+            if (all_rings_pixel_space.is_empty()) continue;
+
+            Rect2 feature_bounds_pixels;
+            std::map<int, std::vector<Edge>> edge_table;
+            
+            // ==================== HIER IST DIE ENTSCHEIDENDE KORREKTUR ====================
+            for (int k = 0; k < all_rings_pixel_space.size(); ++k) {
+                PackedVector2Array ring = all_rings_pixel_space[k];
+                for (int v = 0; v < ring.size(); ++v) {
+                    Vector2 p1 = ring[v];
+                    Vector2 p2 = ring[(v + 1) % ring.size()];
+
+                    if (p1.y > p2.y) std::swap(p1, p2);
+
+                    double delta_y = p2.y - p1.y;
+                    const double ZERO_TOLERANCE = 1e-9; // Eine sehr kleine Toleranz
+
+                    if (abs(delta_y) < ZERO_TOLERANCE) {
+                        continue; // Diese Kante ist horizontal oder fast horizontal. Ignorieren!
+                    }
+
+                    Edge edge;
+                    edge.y_max = p2.y;
+                    edge.x_current = p1.x;
+                    // Die Division ist jetzt sicher.
+                    edge.inv_slope = (p2.x - p1.x) / delta_y;
+                    
+                    int start_y = static_cast<int>(ceil(p1.y));
+                    edge_table[start_y].push_back(edge);
+
+                    if (k == 0 && v == 0) { feature_bounds_pixels = Rect2(p1, Vector2()); }
+                    feature_bounds_pixels.expand_to(p1);
+                    feature_bounds_pixels.expand_to(p2);
+                }
+            }
+            // ==================== ENDE DER KORREKTUR ====================
+
+            
+            // Der Rest der Funktion ist identisch mit der letzten Version und sollte korrekt sein.
+            Vector2i start_chunk = (feature_bounds_pixels.get_position() / sub_chunk_resolution).floor();
+            Vector2i end_chunk = ((feature_bounds_pixels.get_position() + feature_bounds_pixels.get_size()) / sub_chunk_resolution).floor();
+            std::map<Vector2i, uint8_t*> logic_map_pointer_cache;
+            for (auto& pair : prepared_sub_chunks_map) {
+                const Vector2i& coord = pair.first;
+                // Prüfen, ob der Chunk im relevanten Bereich liegt
+                if (coord.x >= start_chunk.x && coord.x <= end_chunk.x &&
+                    coord.y >= start_chunk.y && coord.y <= end_chunk.y) {
+                    
+                    Dictionary& chunk_data = pair.second; // Das ist eine REFERENZ, keine Kopie!
+                    PackedByteArray logic_map_bytes = chunk_data["logic_map_bytes"]; // Dies ist immer noch eine Kopie, aber...
+                    
+                    // ...wir holen den Pointer direkt aus dem Dictionary in der Map, was sicherer sein sollte.
+                    // Sicherste Methode: Pointer direkt aus dem Variant holen.
+                    PackedByteArray* pba = (PackedByteArray*) &((Variant &)chunk_data["logic_map_bytes"]);
+                    logic_map_pointer_cache[coord] = pba->ptrw();
+                }
+            }
+            std::vector<Edge> active_edge_list;
+            int y_start = static_cast<int>(ceil(feature_bounds_pixels.position.y));
+            int y_end = static_cast<int>(ceil(feature_bounds_pixels.get_end().y));
+            y_start = MAX(0, y_start);
+            y_end = MIN((int)total_pixel_dim, y_end);
+            for (int y = y_start; y < y_end; ++y) {
+                if (edge_table.count(y)) {
+                    active_edge_list.insert(active_edge_list.end(), edge_table[y].begin(), edge_table[y].end());
+                }
+                active_edge_list.erase(
+                    std::remove_if(active_edge_list.begin(), active_edge_list.end(), 
+                        [y](const Edge& edge) { return y >= edge.y_max; }),
+                    active_edge_list.end()
+                );
+                if (active_edge_list.empty()) continue;
+                std::sort(active_edge_list.begin(), active_edge_list.end(), compare_edges);
+                for (size_t e = 0; e < active_edge_list.size(); e += 2) {
+                    if (e + 1 >= active_edge_list.size()) break;
+                    int x_start = static_cast<int>(ceil(active_edge_list[e].x_current));
+                    int x_end = static_cast<int>(ceil(active_edge_list[e + 1].x_current));
+                    x_start = MAX(0, x_start);
+                    x_end = MIN((int)total_pixel_dim, x_end);
+                    for (int x = x_start; x < x_end; ++x) {
+                        int chunk_x = static_cast<int>(floor(x / sub_chunk_resolution));
+                        int chunk_y = static_cast<int>(floor(y / sub_chunk_resolution));
+                        Vector2i sub_chunk_coord(chunk_x, chunk_y);
+                        auto it = logic_map_pointer_cache.find(sub_chunk_coord);
+                        if (it != logic_map_pointer_cache.end()) {
+                            uint8_t* logic_map_ptr = it->second;
+                            int pixel_x = x % static_cast<int>(sub_chunk_resolution);
+                            int pixel_y = y % static_cast<int>(sub_chunk_resolution);
+                            int index = pixel_y * sub_chunk_resolution + pixel_x;
+                            logic_map_ptr[index] = type_id; 
+                        }
+                    }
+                }
+                //UtilityFunctions::print("Debug01: Kommt die Methode hierher?");
+                for (auto& edge : active_edge_list) {
+                    edge.x_current += edge.inv_slope;
+                }
+                //UtilityFunctions::print("Debug02: Kommt die Methode hierher?");
+            }
+        }
+    }
+    //UtilityFunctions::print("Debug03: Kommt die Methode hierher?");
+    // ... Finale Datenaufbereitung bleibt identisch ...
+    Dictionary final_sub_chunks;
+    //Array chunk_coords = prepared_sub_chunks_bytes.keys();
+    //UtilityFunctions::print("Debug04: Kommt die Methode hierher?");
+    for (auto const& [coord, chunk_data_dict] : prepared_sub_chunks_map) {
+
+        PackedByteArray logic_map_bytes = chunk_data_dict["logic_map_bytes"];
+        const uint8_t* logic_map_ptr = logic_map_bytes.ptr();
+        Dictionary positions_by_type;
+        //UtilityFunctions::print("Debug06: Kommt die Methode hierher?");
+        for (int64_t y = 0; y < sub_chunk_resolution; ++y) {
+            for (int64_t x = 0; x < sub_chunk_resolution; ++x) {
+                uint8_t type_id = logic_map_ptr[y * sub_chunk_resolution + x];
+                //UtilityFunctions::print("Debug07: Kommt die Methode hierher?");
+                if (type_id > 0) {
+                    if (!positions_by_type.has(type_id)) {
+                        UtilityFunctions::print("Debug: Neuer Typ gefunden: " + String::num_int64(type_id));
+                        positions_by_type[type_id] = PackedVector3Array();
+                    }
+                    //UtilityFunctions::print("Debug08: Kommt die Methode hierher?");
+                    PackedVector3Array pos_array = positions_by_type[type_id];
+                    pos_array.push_back(Vector3(x, 0, y));
+                    positions_by_type[type_id] = pos_array;
+                    //UtilityFunctions::print("Debug09: Kommt die Methode hierher?");
+                }
+            }
+        }
+        //UtilityFunctions::print("Debug10: Kommt die Methode hierher?");
+        Dictionary vegetation_buffers;
+        Array type_ids = positions_by_type.keys();
+        for (int j = 0; j < type_ids.size(); ++j) {
+            int64_t type_id = type_ids[j];
+            PackedVector3Array positions = positions_by_type[Variant(type_id)];
+            int64_t instance_count = positions.size();
+            if (instance_count == 0) continue;
+            const int64_t STRIDE = 16;
+            PackedFloat32Array data_buffer;
+            data_buffer.resize(instance_count * STRIDE);
+            //UtilityFunctions::print("Debug11: Kommt die Methode hierher?");
+            for (int k = 0; k < instance_count; ++k) {
+                const Vector3 &pos = positions[k];
+                Basis basis;
+                int64_t buffer_start_index = k * STRIDE;
+                data_buffer.set(buffer_start_index + 0, basis.get_column(0).x);
+                data_buffer.set(buffer_start_index + 1, basis.get_column(1).x);
+                data_buffer.set(buffer_start_index + 2, basis.get_column(2).x);
+                data_buffer.set(buffer_start_index + 3, pos.x);
+                data_buffer.set(buffer_start_index + 4, basis.get_column(0).y);
+                data_buffer.set(buffer_start_index + 5, basis.get_column(1).y);
+                data_buffer.set(buffer_start_index + 6, basis.get_column(2).y);
+                data_buffer.set(buffer_start_index + 7, pos.y);
+                data_buffer.set(buffer_start_index + 8, basis.get_column(0).z);
+                data_buffer.set(buffer_start_index + 9, basis.get_column(1).z);
+                data_buffer.set(buffer_start_index + 10, basis.get_column(2).z);
+                data_buffer.set(buffer_start_index + 11, pos.z);
+                data_buffer.set(buffer_start_index + 12, rand() % 16);
+                data_buffer.set(buffer_start_index + 13, 0.0);
+                data_buffer.set(buffer_start_index + 14, 0.0);
+                data_buffer.set(buffer_start_index + 15, 1.0);
+            }
+            //UtilityFunctions::print("Debug12: Kommt die Methode hierher?");
+            vegetation_buffers[Variant(type_id)] = data_buffer;
+            //UtilityFunctions::print("Debug13: Kommt die Methode hierher?");
+        }
+        //UtilityFunctions::print("Debug14: Kommt die Methode hierher?");
+        Dictionary final_chunk_data;
+        // WICHTIG: Gib das Byte-Array zurück, nicht ein Image-Objekt!
+        final_chunk_data["logic_map_bytes"] = logic_map_bytes;
+        final_chunk_data["vegetation_buffers"] = vegetation_buffers;
+        final_sub_chunks[coord] = final_chunk_data;
+        //UtilityFunctions::print("Debug15: Kommt die Methode hierher?");
+    }
+    
+    Dictionary result;
+    result["sub_chunks"] = final_sub_chunks;
+    result["type_map"] = type_map;
+
+    // === DER NEUE, ENTSCHEIDENDE SCHRITT ===
+    // Serialisiere das gesamte Ergebnis-Dictionary in ein einziges Byte-Array.
+    String serialized_result = Marshalls::get_singleton()->variant_to_base64(result);
+
+    // Gib nur dieses eine, sichere Byte-Array zurück.
+    return serialized_result;
+}

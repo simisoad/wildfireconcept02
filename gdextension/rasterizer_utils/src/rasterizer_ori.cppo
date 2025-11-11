@@ -1,0 +1,353 @@
+#include "rasterizer.h"
+#include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/classes/marshalls.hpp>
+#include <map>
+#include <vector>
+#include <algorithm>
+
+using namespace godot;
+
+struct SubChunkData {
+    PackedByteArray logic_map_bytes;
+    // Hier könnten später weitere Daten wie vegetation_bytes etc. hinzukommen
+};
+
+void RasterizerUtils::_bind_methods() {
+    // Neue, sichere Funktion registrieren
+    ClassDB::bind_static_method("RasterizerUtils", 
+        D_METHOD("rasterize_tile_data_safe", "safe_mvt_data", "config"), 
+        &RasterizerUtils::rasterize_tile_data_safe);
+}
+
+RasterizerUtils::RasterizerUtils() {}
+RasterizerUtils::~RasterizerUtils() {}
+
+struct Edge {
+    double y_max;
+    double x_current;
+    double inv_slope;
+};
+
+static bool compare_edges(const Edge &a, const Edge &b) {
+    return a.x_current < b.x_current;
+}
+
+// NEUE, SICHERE FUNKTION: Arbeitet nur mit primitiven Dictionary-Daten
+Variant RasterizerUtils::rasterize_tile_data_safe(const Dictionary &safe_mvt_data, const Dictionary &config) {
+    // Früher Ausstieg bei leeren Daten
+    if (safe_mvt_data.is_empty()) {
+        UtilityFunctions::push_warning("RasterizerUtils: Sichere MVT-Daten sind leer.");
+        return String(); // Leerer String statt PackedByteArray
+    }
+
+    const int64_t sub_chunk_resolution = config.get("sub_chunk_resolution", 128);
+    const int64_t sub_chunks_per_axis = config.get("sub_chunks_per_axis", 4);
+    const Dictionary type_map = config.get("type_map", Dictionary());
+    const Array render_order = config.get("render_order", Array());
+
+    const Array sub_chunks_to_render = config.get("sub_chunks_to_render", Array());
+    if (sub_chunks_to_render.is_empty()) {
+        // Wenn keine Sub-Chunks angegeben sind, gibt es nichts zu tun.
+        return String(); 
+    }
+    // Extrahiere tile_extent aus den sicheren Daten
+    const double tile_extent = safe_mvt_data.get("tile_extent", 4096.0);
+    const Array layers = safe_mvt_data.get("layers", Array());
+
+    if (layers.is_empty()) {
+        return String();
+    }
+
+    // Definiere den Enum-Wert für CANCELLED aus TileState.gd. Zähle ab 0.
+    // IDLE=0, DATA_REQUESTED=1, RASTERIZING=2, BUILDING=3, READY=4, CANCELLED=5
+    const int64_t STATE_CANCELLED = 5; 
+    
+    // Hole das TileState-Objekt aus der Konfiguration
+    Variant tile_state_variant = config.get("tile_state", Variant());
+    Object *tile_state_obj = nullptr;
+    // Prüfe, ob das Objekt valide ist
+    if (tile_state_variant.get_type() == Variant::OBJECT) {
+        tile_state_obj = tile_state_variant;
+    }
+
+    // Initialisiere Sub-Chunks
+    std::map<Vector2i, SubChunkData> prepared_sub_chunks_map;
+    for (int i = 0; i < sub_chunks_to_render.size(); ++i) {
+        Vector2i coord = sub_chunks_to_render[i];
+        
+        SubChunkData chunk_data;
+        chunk_data.logic_map_bytes.resize(sub_chunk_resolution * sub_chunk_resolution);
+        chunk_data.logic_map_bytes.fill(0);
+        prepared_sub_chunks_map[coord] = chunk_data;
+    }
+
+    // Gruppiere Features nach Typ - arbeitet jetzt mit Dictionary-Strukturen
+    Dictionary all_features_by_type;
+    for (int layer_idx = 0; layer_idx < layers.size(); ++layer_idx) {
+        Dictionary layer_data = layers[layer_idx];
+        Array features = layer_data.get("features", Array());
+        
+        for (int feature_idx = 0; feature_idx < features.size(); ++feature_idx) {
+            Dictionary feature_data = features[feature_idx];
+            Dictionary tags = feature_data.get("tags", Dictionary());
+            String type_tag = tags.get("type", "");
+            
+            if (type_map.has(type_tag)) {
+                if (!all_features_by_type.has(type_tag)) {
+                    all_features_by_type[type_tag] = Array();
+                }
+                Array feature_list = all_features_by_type[type_tag];
+                feature_list.append(feature_data);
+                all_features_by_type[type_tag] = feature_list;
+            }
+        }
+    }
+
+    const double total_pixel_dim = sub_chunk_resolution * sub_chunks_per_axis;
+    const double scale_vec_to_pixel = total_pixel_dim / tile_extent;
+
+    // Verarbeite Features nach Render-Reihenfolge
+    for (int i = 0; i < render_order.size(); ++i) {
+        String type_name = render_order[i];
+        if (!all_features_by_type.has(type_name)) continue;
+        
+        const int64_t type_id = type_map.get(type_name, 0);
+        Array features_of_type = all_features_by_type[type_name];
+
+
+        for (int j = 0; j < features_of_type.size(); ++j) {
+            
+            // --- NEU: Abbruch-Prüfung in der Schleife ---
+            // Prüfe alle 20 Features, um den Overhead gering zu halten.
+            if (tile_state_obj != nullptr && j % 20 == 0) {
+                // Frage den aktuellen Zustand des Objekts ab.
+                // Der String "current_state" muss exakt dem Variablennamen in TileState.gd entsprechen!
+                int64_t current_state = tile_state_obj->get("current_state");
+                
+                if (current_state == STATE_CANCELLED) {
+                    // Der Hauptthread will, dass wir abbrechen.
+                    UtilityFunctions::print("Rasterizer job cancelled mid-process.");
+                    return String(); // Job abbrechen, leeres Ergebnis zurückgeben.
+                }
+            }
+            Dictionary feature_data = features_of_type[j];
+            Array geometry_commands = feature_data.get("geometry", Array());
+            
+            // Geometrie-Parsing (identisch zur ursprünglichen Logik)
+            Array all_rings_pixel_space;
+            PackedVector2Array current_ring;
+            Vector2 cursor(0, 0);
+            
+            for (int k = 0; k < geometry_commands.size(); ++k) {
+                Array cmd_seq = geometry_commands[k];
+                if (cmd_seq.is_empty()) continue;
+                
+                int64_t cmd_id = cmd_seq[0];
+                if (cmd_id == 1) { // Move to
+                    if (cmd_seq.size() >= 3) {
+                        cursor += Vector2(cmd_seq[1], cmd_seq[2]);
+                        current_ring.push_back(cursor * scale_vec_to_pixel);
+                    }
+                } else if (cmd_id == 2) { // Line to
+                    for (int l = 1; l < cmd_seq.size(); l += 2) {
+                        if (l + 1 < cmd_seq.size()) {
+                            cursor += Vector2(cmd_seq[l], cmd_seq[l + 1]);
+                            current_ring.push_back(cursor * scale_vec_to_pixel);
+                        }
+                    }
+                } else if (cmd_id == 7) { // Close path
+                    if (!current_ring.is_empty()) {
+                        all_rings_pixel_space.push_back(current_ring);
+                        current_ring = PackedVector2Array();
+                    }
+                }
+            }
+            
+            if (all_rings_pixel_space.is_empty()) continue;
+
+            // Edge-Tabelle aufbauen (Scanline-Algorithmus)
+            Rect2 feature_bounds_pixels;
+            std::map<int, std::vector<Edge>> edge_table;
+            
+            for (int k = 0; k < all_rings_pixel_space.size(); ++k) {
+                PackedVector2Array ring = all_rings_pixel_space[k];
+                for (int v = 0; v < ring.size(); ++v) {
+                    Vector2 p1 = ring[v];
+                    Vector2 p2 = ring[(v + 1) % ring.size()];
+
+                    if (p1.y > p2.y) std::swap(p1, p2);
+
+                    double delta_y = p2.y - p1.y;
+                    const double ZERO_TOLERANCE = 1e-9;
+
+                    if (abs(delta_y) < ZERO_TOLERANCE) continue;
+
+                    Edge edge;
+                    edge.y_max = p2.y;
+                    edge.x_current = p1.x;
+                    edge.inv_slope = (p2.x - p1.x) / delta_y;
+                    
+                    int start_y = static_cast<int>(ceil(p1.y));
+                    edge_table[start_y].push_back(edge);
+
+                    if (k == 0 && v == 0) {
+                        feature_bounds_pixels = Rect2(p1, Vector2());
+                    }
+                    feature_bounds_pixels.expand_to(p1);
+                    feature_bounds_pixels.expand_to(p2);
+                }
+            }
+
+            // Rasterisierung mit Scanline-Algorithmus
+            Vector2i start_chunk = (feature_bounds_pixels.get_position() / sub_chunk_resolution).floor();
+            Vector2i end_chunk = ((feature_bounds_pixels.get_position() + feature_bounds_pixels.get_size()) / sub_chunk_resolution).floor();
+            
+            std::map<Vector2i, uint8_t*> logic_map_pointer_cache;
+            for (auto& pair : prepared_sub_chunks_map) {
+                const Vector2i& coord = pair.first;
+                if (coord.x >= start_chunk.x && coord.x <= end_chunk.x &&
+                    coord.y >= start_chunk.y && coord.y <= end_chunk.y) {
+                    
+                    logic_map_pointer_cache[coord] = pair.second.logic_map_bytes.ptrw();
+                }
+            }
+            
+            std::vector<Edge> active_edge_list;
+            int y_start = static_cast<int>(ceil(feature_bounds_pixels.position.y));
+            int y_end = static_cast<int>(ceil(feature_bounds_pixels.get_end().y));
+            // Don't clip y_start/y_end here, but we must check bounds before writing!
+
+            for (int y = y_start; y < y_end; ++y) {
+                if (edge_table.count(y)) {
+                    active_edge_list.insert(active_edge_list.end(),
+                        edge_table[y].begin(), edge_table[y].end());
+                }
+
+                active_edge_list.erase(
+                    std::remove_if(active_edge_list.begin(), active_edge_list.end(),
+                        [y](const Edge& edge) { return y >= edge.y_max; }),
+                    active_edge_list.end()
+                );
+
+                if (active_edge_list.empty()) continue;
+
+                std::sort(active_edge_list.begin(), active_edge_list.end(), compare_edges);
+
+                for (size_t e = 0; e + 1 < active_edge_list.size(); e += 2) {
+                    int x_start = static_cast<int>(ceil(active_edge_list[e].x_current));
+                    int x_end = static_cast<int>(ceil(active_edge_list[e + 1].x_current));
+                    // Don't clip x_start/x_end here, but check bounds before writing!
+
+                    for (int x = x_start; x < x_end; ++x) {
+                        // Check if x and y are within the valid raster area
+                        if (x < 0 || x >= static_cast<int>(total_pixel_dim) ||
+                            y < 0 || y >= static_cast<int>(total_pixel_dim)) {
+                            continue;
+                        }
+
+                        int chunk_x = static_cast<int>(floor(x / sub_chunk_resolution));
+                        int chunk_y = static_cast<int>(floor(y / sub_chunk_resolution));
+                        Vector2i sub_chunk_coord(chunk_x, chunk_y);
+
+                        auto it = logic_map_pointer_cache.find(sub_chunk_coord);
+                        if (it != logic_map_pointer_cache.end()) {
+                            uint8_t* logic_map_ptr = it->second;
+                            int pixel_x = x % static_cast<int>(sub_chunk_resolution);
+                            int pixel_y = y % static_cast<int>(sub_chunk_resolution);
+                            int index = pixel_y * sub_chunk_resolution + pixel_x;
+                            // Double-check index is in bounds
+                            if (index >= 0 && index < sub_chunk_resolution * sub_chunk_resolution) {
+                                logic_map_ptr[index] = type_id;
+                            }
+                        }
+                    }
+                }
+
+                for (auto& edge : active_edge_list) {
+                    edge.x_current += edge.inv_slope;
+                }
+            }
+        }
+    }
+    
+    // Finale Datenaufbereitung
+    const double sub_chunk_world_size = config.get("sub_chunk_world_size", 128.0);
+    const double scale_factor = sub_chunk_world_size / sub_chunk_resolution;
+    Dictionary final_sub_chunks;
+    for (auto const& [coord, chunk_data_struct] : prepared_sub_chunks_map) {
+        const PackedByteArray& logic_map_bytes = chunk_data_struct.logic_map_bytes;
+        const uint8_t* logic_map_ptr = logic_map_bytes.ptr();
+        Dictionary positions_by_type;
+        
+        for (int64_t y = 0; y < sub_chunk_resolution; ++y) {
+            for (int64_t x = 0; x < sub_chunk_resolution; ++x) {
+                uint8_t type_id = logic_map_ptr[y * sub_chunk_resolution + x];
+                if (type_id > 0) {
+                    if (!positions_by_type.has(type_id)) {
+                        positions_by_type[type_id] = PackedVector3Array();
+                    }
+                    PackedVector3Array pos_array = positions_by_type[type_id];
+                    double world_x = x * scale_factor;
+                    double world_z = y * scale_factor;
+
+                    pos_array.push_back(Vector3(world_x, 0, world_z));
+                    positions_by_type[type_id] = pos_array;
+                }
+            }
+        }
+        
+        Dictionary vegetation_buffers;
+        Array type_ids = positions_by_type.keys();
+        for (int j = 0; j < type_ids.size(); ++j) {
+            int64_t type_id = type_ids[j];
+            PackedVector3Array positions = positions_by_type[Variant(type_id)];
+            int64_t instance_count = positions.size();
+            if (instance_count == 0) continue;
+            
+            const int64_t STRIDE = 16;
+            PackedFloat32Array data_buffer;
+            data_buffer.resize(instance_count * STRIDE);
+            
+            for (int k = 0; k < instance_count; ++k) {
+                const Vector3 &pos = positions[k];
+                //Basis basis;
+                Basis basis = Basis().scaled(Vector3(scale_factor, 1.0, scale_factor));
+                int64_t buffer_start_index = k * STRIDE;
+                
+                // Transform-Matrix setzen
+                data_buffer.set(buffer_start_index + 0, basis.get_column(0).x);
+                data_buffer.set(buffer_start_index + 1, basis.get_column(1).x);
+                data_buffer.set(buffer_start_index + 2, basis.get_column(2).x);
+                data_buffer.set(buffer_start_index + 3, pos.x);
+                data_buffer.set(buffer_start_index + 4, basis.get_column(0).y);
+                data_buffer.set(buffer_start_index + 5, basis.get_column(1).y);
+                data_buffer.set(buffer_start_index + 6, basis.get_column(2).y);
+                data_buffer.set(buffer_start_index + 7, pos.y);
+                data_buffer.set(buffer_start_index + 8, basis.get_column(0).z);
+                data_buffer.set(buffer_start_index + 9, basis.get_column(1).z);
+                data_buffer.set(buffer_start_index + 10, basis.get_column(2).z);
+                data_buffer.set(buffer_start_index + 11, pos.z);
+                data_buffer.set(buffer_start_index + 12, rand() % 16);
+                data_buffer.set(buffer_start_index + 13, 0.0);
+                data_buffer.set(buffer_start_index + 14, 0.0);
+                data_buffer.set(buffer_start_index + 15, 1.0);
+            }
+            
+            vegetation_buffers[Variant(type_id)] = data_buffer;
+        }
+        
+        Dictionary final_chunk_data;
+        final_chunk_data["logic_map_bytes"] = chunk_data_struct.logic_map_bytes; 
+        final_chunk_data["vegetation_buffers"] = vegetation_buffers;
+        final_sub_chunks[coord] = final_chunk_data;
+    }
+    
+    Dictionary result;
+    result["sub_chunks"] = final_sub_chunks;
+    result["type_map"] = type_map;
+
+    // Sichere Serialisierung
+    String serialized_result = Marshalls::get_singleton()->variant_to_base64(result);
+    return serialized_result;
+}

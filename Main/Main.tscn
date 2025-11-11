@@ -1,0 +1,144 @@
+[gd_scene load_steps=15 format=3 uid="uid://btgik6e5pkrai"]
+
+[ext_resource type="Script" uid="uid://c6pcaqwuugiqy" path="res://WorldBuilder/WorldBuilder.gd" id="1_amygn"]
+[ext_resource type="Script" uid="uid://cjq4xqv8wh8wh" path="res://Main/player.gd" id="1_lxy7q"]
+[ext_resource type="Script" uid="uid://bmm25n6q7jxvj" path="res://Main/camera_3d.gd" id="2_83ytx"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_6aewd"]
+albedo_color = Color(1, 0, 0, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_hh5pf"]
+albedo_color = Color(0, 1, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_amygn"]
+font_size = 32
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_amygn"]
+sky_top_color = Color(0.533013, 0.700938, 0.80805, 1)
+sky_curve = 0.0891904
+
+[sub_resource type="Sky" id="Sky_ps1la"]
+sky_material = SubResource("ProceduralSkyMaterial_amygn")
+
+[sub_resource type="Environment" id="Environment_6aewd"]
+background_mode = 2
+background_energy_multiplier = 0.1
+sky = SubResource("Sky_ps1la")
+ambient_light_source = 3
+reflected_light_source = 2
+
+[sub_resource type="CameraAttributesPractical" id="CameraAttributesPractical_u2i7p"]
+
+[sub_resource type="Compositor" id="Compositor_hh5pf"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_amygn"]
+albedo_color = Color(0, 0, 1, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ps1la"]
+albedo_color = Color(1, 0, 0, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_u2i7p"]
+transparency = 4
+blend_mode = 3
+
+[node name="Main" type="Node"]
+
+[node name="WorldContainer" type="Node3D" parent="."]
+unique_name_in_owner = true
+
+[node name="WorldBuilder" type="Node3D" parent="WorldContainer"]
+script = ExtResource("1_amygn")
+
+[node name="Limbo" type="Node3D" parent="WorldContainer"]
+
+[node name="Player" type="Node3D" parent="."]
+script = ExtResource("1_lxy7q")
+
+[node name="Camera3D" type="Camera3D" parent="Player"]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 156.5482, -6.624384e-06)
+projection = 1
+script = ExtResource("2_83ytx")
+
+[node name="Debug_PlayerPos" type="CSGBox3D" parent="Player"]
+size = Vector3(10, 10, 10)
+material = SubResource("StandardMaterial3D_6aewd")
+
+[node name="LOD_0_0" type="CSGBox3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 256, 0, 256)
+size = Vector3(10, 10, 10)
+material = SubResource("StandardMaterial3D_hh5pf")
+
+[node name="LOD_0_1" type="CSGBox3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -256, 0, 256)
+size = Vector3(10, 10, 10)
+material = SubResource("StandardMaterial3D_hh5pf")
+
+[node name="LOD_0_2" type="CSGBox3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 256, 0, -256)
+size = Vector3(10, 10, 10)
+material = SubResource("StandardMaterial3D_hh5pf")
+
+[node name="LOD_0_3" type="CSGBox3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -256, 0, -256)
+size = Vector3(10, 10, 10)
+material = SubResource("StandardMaterial3D_hh5pf")
+
+[node name="Debug" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Debug"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Debug/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Debug/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "current_tile_coords:"
+
+[node name="Label2" type="Label" parent="Debug/VBoxContainer"]
+layout_mode = 2
+text = "debug2"
+label_settings = SubResource("LabelSettings_amygn")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_6aewd")
+camera_attributes = SubResource("CameraAttributesPractical_u2i7p")
+compositor = SubResource("Compositor_hh5pf")
+
+[node name="z_plus" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 93.2055, 100)
+material_override = SubResource("StandardMaterial3D_amygn")
+size = Vector3(10, 10, 10)
+
+[node name="x_plus" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 100, 93.2055, 0)
+material_override = SubResource("StandardMaterial3D_ps1la")
+size = Vector3(10, 10, 10)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.564967, 0.825113, 0, -0.825113, 0.564967, 0, 0, 0)
+light_color = Color(0.650128, 0.650128, 0.650128, 1)
+light_angular_distance = 1.45
+light_specular = 3.386
+
+[node name="Sprite3D" type="Sprite3D" parent="."]
+material_override = SubResource("StandardMaterial3D_u2i7p")
+
+[node name="VisibleOnScreenNotifier3D" type="VisibleOnScreenNotifier3D" parent="."]
+visible = false
+
+[node name="VisibleOnScreenEnabler3D" type="VisibleOnScreenEnabler3D" parent="VisibleOnScreenNotifier3D"]
+visible = false

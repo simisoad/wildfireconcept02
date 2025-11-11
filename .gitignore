@@ -1,0 +1,11 @@
+# Godot 4+ specific ignores
+.godot/
+.godot_ide/
+.vscode/
+_TexturesAffinity/
+android/
+db/
+addons/
+gdextension/rasterizer_utils/bin
+gdextension/rasterizer_utils/gdextension/
+

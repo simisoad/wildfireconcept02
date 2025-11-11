@@ -1,0 +1,19 @@
+; raytracer_utils.gdextension
+; (Platziere diese Datei z.B. im Hauptordner oder in gdextension/)
+
+[configuration]
+; Dieser Name MUSS mit dem Namen der extern "C" Funktion
+; in deiner register_types.cpp übereinstimmen!
+entry_symbol = "rasterizer_utils_library_init"
+
+; Setze die Godot-Version, für die du kompilierst oder eine frühere kompatible
+compatibility_minimum = "4.4"
+
+[libraries]
+; Pfad zur kompilierten DLL relativ zum Projektordner (res://)
+; Stelle sicher, dass der Dateiname exakt dem entspricht, was scons erstellt hat.
+windows.x86_64 = "res://gdextension/rasterizer_utils/bin/rasterizer_utils.dll"
+
+; Kommentiere die Zeilen für andere Betriebssysteme ein, falls du dafür baust
+; linux.x86_64 = "res://bin/libraytracer_utils.so"
+; macos.universal = "res://bin/libraytracer_utils.dylib"

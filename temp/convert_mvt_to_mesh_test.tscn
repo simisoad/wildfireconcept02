@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3 uid="uid://bxyqhg3te7jyg"]
+
+[ext_resource type="Script" uid="uid://do3kc8w03ce4" path="res://Tools/convert_mvt_to_mesh_test.gd" id="1_vukbd"]
+[ext_resource type="PackedScene" uid="uid://dkfm6qxavqtnq" path="res://Main/camera_3D_Ortho.tscn" id="2_c0s5q"]
+
+[node name="ConvertMvtToMeshTest" type="Node2D"]
+script = ExtResource("1_vukbd")
+
+[node name="Camera2D" parent="." instance=ExtResource("2_c0s5q")]
+transform = Transform3D(-1, -8.74228e-08, 0, -3.82137e-15, 4.37114e-08, 1, -8.74228e-08, 1, -4.37114e-08, 63.488, -2.56, 0)
+
+[node name="Camera3D" type="Camera3D" parent="."]
