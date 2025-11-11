@@ -1,6 +1,6 @@
 
 
-# Wildfire Response RTS - A Godot Engine Tech Demo
+# WildfireConcept02 RTS - A Godot Engine Tech Demo
 
 [![Godot Version](https://img.shields.io/badge/Godot-4.x-blue.svg)](https://godotengine.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
@@ -8,8 +8,6 @@
 
 **A prototype for a Real-Time Strategy (RTS) game focused on wildfire management, built upon a custom, high-performance world streaming system for the Godot Engine.**
 
-![Screenshot of the game world](https://via.placeholder.com/800x450.png?text=Insert+GIF+or+Compelling+Screenshot+Here)
-*(**Note:** A visual is critical! Replace the placeholder above with a GIF or screenshot showing the dynamically generated terrain.)*
 
 ## About The Project
 
