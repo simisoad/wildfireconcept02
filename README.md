@@ -57,7 +57,7 @@ To run this project, you will need to set up the environment, compile the GDExte
 2.  **Install Add-ons:**
     This project requires the following third-party add-ons. Please download them and place them in the `addons/` directory:
     *   [godot-sqlite](https://github.com/2shady4u/godot-sqlite)
-    *   [geo-tile-loader](https://github.com/nomis-3d/geo-tile-loader) (*Assuming you have another repo for this, otherwise link to the original*)
+    *   [geo-tile-loader](https://github.com/pka/godot-geo-tile-loader)
 
 3.  **Compile the GDExtension:**
     Navigate to the `rasterizer_utils` directory and compile the C++ library. For detailed instructions, see the [Godot GDExtension documentation](https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension/compiling_gdextension.html).
